@@ -1,0 +1,285 @@
+<!DOCTYPE HTML>
+<html xmlns:th="http://www.thymeleaf.org">
+	<head>
+	
+		<title th:text="${header}">title place holder</title>
+	
+		<!-- Required meta tags -->
+	    <meta charset="utf-8">
+	    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	
+	    <!-- Bootstrap CSS -->
+	    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.0/css/font-awesome.min.css">
+
+		
+		<style>
+			.cover {
+				position:relative; 
+				overflow: hidden;
+				height: 195px;
+				width:100%;
+			}
+			.cover img {
+				position: absolute;
+				width:100%;
+			}
+			.movie-title {
+				min-height: 100px;
+			}
+			.jumbotron {
+			  min-height:100%;
+			  background:linear-gradient(90deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.8)), url("img/cinema-1241422.jpg");
+			  background-size:cover;
+			}
+			.jumbotron h1 {
+				color: white; 
+    			text-shadow: 0 0 5px black;
+			}
+			.lead 
+			{
+				color: white; 
+				text-shadow: 0 0 5px black;
+			}
+
+			.wrapper {
+				height: 50vh;
+				overflow-y: scroll;
+			}
+
+        </style>
+		
+		
+	</head>
+	
+
+	<body>
+
+		<!-- handlebar templates -->
+		<script id="element-template" type="text/x-handlebars-template">
+				<li id="{{id}}" class="list-group-item"><span class="transcript"></span></li>
+		</script>
+
+		<script id="job-template" type="text/x-handlebars-template">
+			<div class="row" id="{{id}}">
+				<div class="col-8">
+					<span class="status">--<span>					
+				</div>
+				<div class="col-3">
+					<button class="btn btn-primary mb-2 stop">Stop</button>
+				</div>
+			</div>	   
+		</script>
+		
+
+
+		<main role="main">
+
+			<section class="jumbotron text-center">
+				<div class="container">
+					<h1>Transcribe</h1>
+					<p class="lead">Transcribe audio of conversation, youtube videos, presentations</p>
+				</div>
+			</section>
+
+			<div class="album py-5 bg-light">
+				<div class="container">
+				
+					<div class="row">
+						<div class="col-1">
+							<i id="bulb" class="fa fa-lightbulb-o fa-2x" aria-hidden="true"></i>
+						</div>
+						<div class="col-3">
+							<button id="connect" class="btn btn-primary mb-2">Connect</button>
+						</div>
+						<div class="col-3">
+							<button id="disconnect" class="btn btn-secondary mb-2">Disconnect</button>
+						</div>
+					</div>
+				
+
+					<div class="row">
+						<div class="col-4">
+							<select class="form-control mb-2 mr-sm-2" id="device">
+								<option th:each="device : ${devices}" th:value="${device.id}" th:text="${device.name}"></option>
+							</select>						
+						</div>
+						<div class="col-4">
+							<select class="form-control mb-2 mr-sm-2" id="language">
+								<option th:each="language : ${languages}" th:value="${language.id}" th:text="${language.name}"></option>
+							</select>
+						</div>
+						<div class="col-3">
+							<button id="start" class="btn btn-primary mb-2">Start</button>
+						</div>
+					</div>
+
+				<div id="jobs">
+				</div>
+
+				<div class="collapse show wrapper">
+					<ul id="elements" class="list-group">
+					</ul>
+			    </div>
+				</div>
+			</div>
+
+		</main>
+
+		<footer class="container">
+			<p>&copy; frittenburger.de 2020</p>
+		</footer>
+
+
+		<script src="js/jquery-3.4.1.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+		<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+		
+		<script src="js/handlebars-v4.1.2.js"></script>
+		
+		<script src="js/sockjs-0.3.4.js"></script>
+	    <script src="js/stomp.js"></script>
+
+
+	<script>
+
+	   $( document ).ready(function() {
+	  
+		
+
+		var elementTemplateSource = document.getElementById("element-template").innerHTML;
+		var elementTemplate = Handlebars.compile(elementTemplateSource);
+
+		var jobTemplateSource = document.getElementById("job-template").innerHTML;
+		var jobTemplate = Handlebars.compile(jobTemplateSource);
+
+
+		var stompClient = null;
+
+		function setConnected(connected) {
+			if(connected)
+				$("#bulb").css("color","lime");
+			else
+				$("#bulb").css("color","red");
+		}
+
+		function connect() {
+
+			var socket = new SockJS('/chat');
+			stompClient = Stomp.over(socket);
+			stompClient.connect({}, function(frame) {
+
+				setConnected(true);
+				console.log('Connected: ' + frame);
+				stompClient.subscribe('/topic/status', function(message) {
+					setStatus(JSON.parse(message.body));
+				});
+
+				stompClient.subscribe('/topic/transcript', function(message) {
+					setTranscript(JSON.parse(message.body));
+				});	
+
+				//List Jobs
+				$.ajax({
+					type: "GET",
+					url: "/list-jobs",
+					success: function(res) {
+						console.log(res);
+					}
+				});
+			});
+		}
+
+		function disconnect() {
+
+			if(stompClient != null) {
+				stompClient.disconnect();
+			}
+
+			setConnected(false);
+			console.log("Disconnected");
+		}
+
+		function setStatus(message)
+		{
+			console.log(message);
+
+			var job = $("#jobs").find("#"+message.jobId);
+			if(job.length == 0)
+			{
+				job = $(jobTemplate({ id : message.jobId }));
+				//add handler
+				job.find(".stop").click(function(ev) {
+					ev.preventDefault();
+					$.ajax({
+						type: "GET",
+						url: "/stop-transcribe/"+message.jobId,
+						success: function(res) {
+							console.log(res);
+						}
+					});
+				});
+				$("#jobs").prepend(job);
+			}
+
+
+			$(job).find(".status").text(message.status);
+
+		}
+
+		function setTranscript(message)
+		{
+				//handlebar
+				var element = $("#elements").find("#"+message.resultId);
+				if(element.length == 0)
+				{
+				  element = $(elementTemplate({ id : message.resultId}));
+				  //add handler
+				  $("#elements").prepend(element);
+				}
+				$(element).find(".transcript").text(message.transcript);
+		}
+   
+
+			$("#connect").click(function(ev) {
+				ev.preventDefault();
+				connect();
+			});
+
+			$("#disconnect").click(function(ev) {
+				ev.preventDefault();
+				disconnect();
+			});
+
+			$("#bulb").css("color","silver");
+
+			//AutoConnect
+			connect();
+
+			$("#start").click(function(ev) {
+				ev.preventDefault();
+
+				let language = $("#language").val();
+				let device = $("#device").val();
+
+				$.ajax({
+					type: "POST",
+					url: "/start-transcribe",
+					data: { device : device , language : language },
+					success: function(res) {
+						console.log(res);
+					}
+				});
+				
+
+			});
+
+
+			
+
+		});
+	   </script>
+
+	</body>
+
+</html>
